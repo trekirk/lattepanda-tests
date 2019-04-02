@@ -1,0 +1,261 @@
+diff --git a/sound/soc/codecs/rt5645.c b/sound/soc/codecs/rt5645.c
+index 3e3c7f6..4e64f86 100644
+--- a/sound/soc/codecs/rt5645.c
++++ b/sound/soc/codecs/rt5645.c
+@@ -44,6 +44,8 @@
+ 
+ #define RT5645_HWEQ_NUM 57
+ 
++static struct rt5645_priv *rt5645_priv_tmp = NULL;
++
+ static const struct regmap_range_cfg rt5645_ranges[] = {
+ 	{
+ 		.name = "PR",
+@@ -75,8 +77,8 @@ static const struct reg_default rt5645_reg[] = {
+ 	{ 0x01, 0xc8c8 },
+ 	{ 0x02, 0xc8c8 },
+ 	{ 0x03, 0xc8c8 },
+-	{ 0x0a, 0x0002 },
+-	{ 0x0b, 0x2827 },
++	{ 0x0a, 0x0006 }, //0x0002
++	{ 0x0b, 0x0827 }, //0x2827
+ 	{ 0x0c, 0xe000 },
+ 	{ 0x0d, 0x0000 },
+ 	{ 0x0e, 0x0000 },
+@@ -105,9 +107,9 @@ static const struct reg_default rt5645_reg[] = {
+ 	{ 0x34, 0x0000 },
+ 	{ 0x35, 0x0000 },
+ 	{ 0x3b, 0x0000 },
+-	{ 0x3c, 0x007f },
++	{ 0x3c, 0x007d }, //0x007f
+ 	{ 0x3d, 0x0000 },
+-	{ 0x3e, 0x007f },
++	{ 0x3e, 0x007d }, //0x007f
+ 	{ 0x3f, 0x0000 },
+ 	{ 0x40, 0x001f },
+ 	{ 0x41, 0x0000 },
+@@ -139,7 +141,7 @@ static const struct reg_default rt5645_reg[] = {
+ 	{ 0x63, 0x00c2 },
+ 	{ 0x64, 0x0000 },
+ 	{ 0x65, 0x0000 },
+-	{ 0x66, 0x0000 },
++	{ 0x66, 0x0020 }, // 0x0000
+ 	{ 0x6a, 0x0000 },
+ 	{ 0x6c, 0x0aaa },
+ 	{ 0x70, 0x8000 },
+@@ -216,7 +218,7 @@ static const struct reg_default rt5645_reg[] = {
+ 	{ 0xf2, 0x1f00 },
+ 	{ 0xf3, 0x0000 },
+ 	{ 0xf4, 0x4000 },
+-	{ 0xf8, 0x0000 },
++	{ 0xf8, 0x00f0 },//0x0000 
+ 	{ 0xf9, 0x0000 },
+ 	{ 0xfa, 0x2060 },
+ 	{ 0xfb, 0x4040 },
+@@ -1620,6 +1622,14 @@ static int rt5645_hp_event(struct snd_soc_dapm_widget *w,
+ 				RT5645_HP_SG_MASK | RT5645_HP_L_SMT_MASK |
+ 				RT5645_HP_R_SMT_MASK, RT5645_HP_SG_DIS |
+ 				RT5645_HP_L_SMT_DIS | RT5645_HP_R_SMT_DIS);
++			/*add for rt5645 play music on 0903*/
++			msleep(50);
++			snd_soc_write(codec, 0x00a, 0x0006);
++			msleep(50);
++			snd_soc_write(codec, 0x0f8, 0x00f0);
++			msleep(50);
++			snd_soc_write(codec, 0x00b, 0x0827);
++
+ 		}
+ 		break;
+ 
+@@ -2865,6 +2875,9 @@ static int rt5645_set_bias_level(struct snd_soc_codec *codec,
+ 				RT5645_PWR_FV1 | RT5645_PWR_FV2);
+ 			snd_soc_update_bits(codec, RT5645_GEN_CTRL1,
+ 				RT5645_DIG_GATE_CTRL, RT5645_DIG_GATE_CTRL);
++			snd_soc_write(codec, 0x066, 0x0020);
++			snd_soc_write(codec, 0x03c, 0x007d);
++			snd_soc_write(codec, 0x03e, 0x007d);
+ 		}
+ 		break;
+ 
+@@ -3166,13 +3179,94 @@ static irqreturn_t rt5645_irq(int irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
++static ssize_t rt5645_codec_show(struct device *dev,
++                                struct device_attribute *attr, char *buf)
++{
++       struct snd_soc_codec *codec = rt5645_priv_tmp->codec;
++       unsigned int val;
++       int cnt = 0, i;
++
++       cnt += sprintf(buf, "RT5640 codec register\n");
++       for (i = 0; i <= RT5645_VENDOR_ID2; i++) {
++               if (cnt + RT5645_REG_DISP_LEN >= PAGE_SIZE)
++                       break;
++               val = snd_soc_read(codec, i);
++               if (!val)
++                       continue;
++               cnt += snprintf(buf + cnt, RT5645_REG_DISP_LEN,
++                               "#rng%02x  #rv%04x  #rd0\n", i, val);
++       }
++
++       if (cnt >= PAGE_SIZE)
++               cnt = PAGE_SIZE - 1;
++
++       return cnt;
++}
++
++static ssize_t rt5645_codec_store(struct device *dev,
++                                 struct device_attribute *attr,
++                                 const char *buf, size_t count)
++{
++       struct snd_soc_codec *codec = rt5645_priv_tmp->codec;
++       unsigned int val = 0, addr = 0;
++       int i;
++
++       pr_debug("register \"%s\" count=%d\n", buf, count);
++       for (i = 0; i < count; i++) {   /*address */
++               if (*(buf + i) <= '9' && *(buf + i) >= '0')
++                       addr = (addr << 4) | (*(buf + i) - '0');
++               else if (*(buf + i) <= 'f' && *(buf + i) >= 'a')
++                       addr = (addr << 4) | ((*(buf + i) - 'a') + 0xa);
++               else if (*(buf + i) <= 'F' && *(buf + i) >= 'A')
++                       addr = (addr << 4) | ((*(buf + i) - 'A') + 0xa);
++               else
++                       break;
++       }
++
++       for (i = i + 1; i < count; i++) {
++               if (*(buf + i) <= '9' && *(buf + i) >= '0')
++                       val = (val << 4) | (*(buf + i) - '0');
++               else if (*(buf + i) <= 'f' && *(buf + i) >= 'a')
++                       val = (val << 4) | ((*(buf + i) - 'a') + 0xa);
++               else if (*(buf + i) <= 'F' && *(buf + i) >= 'A')
++                       val = (val << 4) | ((*(buf + i) - 'A') + 0xa);
++               else
++                       break;
++       }
++       pr_info("addr=0x%x val=0x%x\n", addr, val);
++       if (addr > RT5645_VENDOR_ID2 || val > 0xffff || val < 0)
++               return count;
++
++       if (i == count) {
++//             pr_debug("0x%02x = 0x%04x\n", addr,
++//                      codec->hw_read(codec, addr));
++               printk("%s  %d  \n", __func__, __LINE__);
++       } else {
++               snd_soc_write(codec, addr, val);
++       }
++
++       return count;
++}
++
++static DEVICE_ATTR(codec_reg, 0600, rt5645_codec_show, rt5645_codec_store);
++
++
+ static int rt5645_probe(struct snd_soc_codec *codec)
+ {
+ 	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+ 	struct rt5645_priv *rt5645 = snd_soc_codec_get_drvdata(codec);
++	int ret = 0;
+ 
+ 	rt5645->codec = codec;
+ 
++	rt5645_priv_tmp = rt5645;
++ 
++       ret = device_create_file(codec->dev, &dev_attr_codec_reg);
++       if (ret != 0) {
++               dev_err(codec->dev,
++                       "Failed to create codex_reg sysfs files: %d\n", ret);
++               return ret;
++       }
+ 	switch (rt5645->codec_type) {
+ 	case CODEC_TYPE_RT5645:
+ 		snd_soc_dapm_new_controls(dapm,
+@@ -3521,6 +3615,7 @@ static int rt5645_i2c_probe(struct i2c_client *i2c,
+ 		goto err_enable;
+ 	}
+ 
++	printk("%d   %s  rt5645->codec_type = %d \n", __LINE__,__func__, rt5645->codec_type);
+ 	regmap_write(rt5645->regmap, RT5645_RESET, 0);
+ 
+ 	ret = regmap_register_patch(rt5645->regmap, init_list,
+diff --git a/sound/soc/intel/boards/cht_bsw_rt5645.c b/sound/soc/intel/boards/cht_bsw_rt5645.c
+index 38d65a3..58c59a8 100644
+--- a/sound/soc/intel/boards/cht_bsw_rt5645.c
++++ b/sound/soc/intel/boards/cht_bsw_rt5645.c
+@@ -190,14 +190,14 @@ static int cht_codec_init(struct snd_soc_pcm_runtime *runtime)
+ 				RT5645_DA_MONO_R_FILTER |
+ 				RT5645_AD_STEREO_FILTER,
+ 				RT5645_CLK_SEL_I2S1_ASRC);
+-
++#if 0
+ 	/* TDM 4 slots 24 bit, set Rx & Tx bitmask to 4 active slots */
+ 	ret = snd_soc_dai_set_tdm_slot(codec_dai, 0xF, 0xF, 4, 24);
+ 	if (ret < 0) {
+ 		dev_err(runtime->dev, "can't set codec TDM slot %d\n", ret);
+ 		return ret;
+ 	}
+-
++#endif
+ 	if (ctx->acpi_card->codec_type == CODEC_TYPE_RT5650)
+ 		jack_type = SND_JACK_HEADPHONE | SND_JACK_MICROPHONE |
+ 					SND_JACK_BTN_0 | SND_JACK_BTN_1 |
+@@ -225,6 +225,7 @@ static int cht_codec_fixup(struct snd_soc_pcm_runtime *rtd,
+ 			SNDRV_PCM_HW_PARAM_RATE);
+ 	struct snd_interval *channels = hw_param_interval(params,
+ 						SNDRV_PCM_HW_PARAM_CHANNELS);
++	int ret = 0;
+ 
+ 	/* The DSP will covert the FE rate to 48k, stereo, 24bits */
+ 	rate->min = rate->max = 48000;
+@@ -232,6 +233,27 @@ static int cht_codec_fixup(struct snd_soc_pcm_runtime *rtd,
+ 
+ 	/* set SSP2 to 24-bit */
+ 	params_set_format(params, SNDRV_PCM_FORMAT_S24_LE);
++	
++	/*
++         * Default mode for SSP configuration is TDM 4 slot, override config
++         * with explicit setting to I2S 2ch 24-bit. The word length is set with
++         * dai_set_tdm_slot() since there is no other API exposed
++         */
++        ret = snd_soc_dai_set_fmt(rtd->cpu_dai,
++                                  SND_SOC_DAIFMT_I2S     |
++                                  SND_SOC_DAIFMT_NB_IF   |
++                                  SND_SOC_DAIFMT_CBS_CFS
++                                  );
++        if (ret < 0) {
++                dev_err(rtd->dev, "can't set format to I2S, err %d\n", ret);
++                return ret;
++        }
++
++        ret = snd_soc_dai_set_tdm_slot(rtd->cpu_dai, 0x3, 0x3, 2, 24);
++        if (ret < 0) {
++                dev_err(rtd->dev, "can't set I2S config, err %d\n", ret);
++                return ret;
++        }
+ 	return 0;
+ }
+ 
+@@ -281,8 +303,10 @@ static struct snd_soc_dai_link cht_dailink[] = {
+ 		.no_pcm = 1,
+ 		.codec_dai_name = "rt5645-aif1",
+ 		.codec_name = "i2c-10EC5645:00",
+-		.dai_fmt = SND_SOC_DAIFMT_DSP_B | SND_SOC_DAIFMT_IB_NF
+-					| SND_SOC_DAIFMT_CBS_CFS,
++	//	.dai_fmt = SND_SOC_DAIFMT_DSP_B | SND_SOC_DAIFMT_IB_NF
++	//				| SND_SOC_DAIFMT_CBS_CFS,
++		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF
++                                        | SND_SOC_DAIFMT_CBS_CFS,       //modify on 0902 for I2S mode
+ 		.init = cht_codec_init,
+ 		.be_hw_params_fixup = cht_codec_fixup,
+ 		.nonatomic = true,
+@@ -359,7 +383,7 @@ static int snd_cht_mc_probe(struct platform_device *pdev)
+ 	card->dev = &pdev->dev;
+ 	sprintf(codec_name, "i2c-%s:00", drv->acpi_card->codec_id);
+ 	/* set correct codec name */
+-	strcpy((char *)card->dai_link[2].codec_name, codec_name);
++//	strcpy((char *)card->dai_link[2].codec_name, codec_name);
+ 	snd_soc_card_set_drvdata(card, drv);
+ 	ret_val = devm_snd_soc_register_card(&pdev->dev, card);
+ 	if (ret_val) {

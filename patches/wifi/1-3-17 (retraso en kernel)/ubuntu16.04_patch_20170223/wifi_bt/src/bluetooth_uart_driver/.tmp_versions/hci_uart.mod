@@ -1,0 +1,2 @@
+/home/t/Desktop/Linux_BT_UART_v3.1_20160419_8723BS_BTCOEX_20151223-654a/bluetooth_uart_driver/hci_uart.ko
+/home/t/Desktop/Linux_BT_UART_v3.1_20160419_8723BS_BTCOEX_20151223-654a/bluetooth_uart_driver/hci_ldisc.o /home/t/Desktop/Linux_BT_UART_v3.1_20160419_8723BS_BTCOEX_20151223-654a/bluetooth_uart_driver/hci_h4.o /home/t/Desktop/Linux_BT_UART_v3.1_20160419_8723BS_BTCOEX_20151223-654a/bluetooth_uart_driver/hci_rtk_h5.o /home/t/Desktop/Linux_BT_UART_v3.1_20160419_8723BS_BTCOEX_20151223-654a/bluetooth_uart_driver/rtk_coex.o
